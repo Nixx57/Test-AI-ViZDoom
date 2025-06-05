@@ -39,6 +39,11 @@ class AdvancedRewardSystem:
         self.objective_positions = []  # Current objective positions
         self.last_objective_distance = float('inf')
         
+        # Secret area tracking
+        self.in_secret_area = False
+        self.secret_area_start_time = 0
+        self.last_secret_found = 0  # Timestamp when secret was last found
+        
         # Tactical behavior
         self.combat_mode = False
         self.last_enemy_seen = 0
@@ -171,34 +176,34 @@ class AdvancedRewardSystem:
         """Convertit une position en clé de grille pour l'exploration"""
         return (int(x // grid_size), int(y // grid_size))
 
-    def calculate_exploration_reward(self, current_pos):
-        """Calcule la récompense d'exploration avec bonus pour la progression"""
-        if current_pos is None:
+    def calculate_exploration_reward(self, current_pos, game_vars=None):
+        """Calcule la récompense d'exploration avec bonus pour la progression
+        
+        Args:
+            current_pos: Position actuelle (x, y, z)
+            game_vars: Variables du jeu (optionnel, utilisé pour détecter les secrets)
+        """
+        if current_pos is None or len(current_pos) < 2:
             return 0.0
             
-        if self.last_position is None:
-            self.last_position = current_pos
-            self.episode_start_pos = current_pos
+        # Calculate distance from start
+        if not hasattr(self, 'episode_start_pos') or self.episode_start_pos is None:
+            self.episode_start_pos = (current_pos[0], current_pos[1])
             return 0.0
-        
-        # Calculate distance from the start position
-        if not hasattr(self, 'episode_start_pos'):
-            self.episode_start_pos = current_pos
             
         distance_from_start = math.sqrt(
-            (current_pos[0] - self.episode_start_pos[0])**2 + 
+            (current_pos[0] - self.episode_start_pos[0])**2 +
             (current_pos[1] - self.episode_start_pos[1])**2
         )
         
-        # Calculate distance traveled since the last frame
-        distance = math.sqrt(
-            (current_pos[0] - self.last_position[0])**2 + 
-            (current_pos[1] - self.last_position[1])**2
-        )
-        
-        # Update position
-        self.last_position = current_pos
-        self.episode_stats['distance_traveled'] += distance
+        # Update distance traveled
+        distance = 0
+        if hasattr(self, 'last_position') and self.last_position is not None:
+            distance = math.sqrt(
+                (current_pos[0] - self.last_position[0])**2 +
+                (current_pos[1] - self.last_position[1])**2
+            )
+            self.episode_stats['distance_traveled'] += distance
         
         # Check if the agent is stuck
         if distance < self.movement_threshold:
@@ -210,9 +215,30 @@ class AdvancedRewardSystem:
         pos_key = self.get_position_key(current_pos[0], current_pos[1])
         exploration_reward = 0.0
         
+        # Check if we've entered or exited a secret area
+        if game_vars is not None and len(game_vars) > 2:
+            current_time = time.time()
+            secret_found = game_vars[2] > self.last_secretcount
+            
+            if secret_found:
+                self.in_secret_area = True
+                self.secret_area_start_time = current_time
+                self.last_secret_found = current_time
+            # Consider we've left the secret area if we've moved significantly
+            elif self.in_secret_area and distance > 100 and (current_time - self.last_secret_found) > 5.0:
+                self.in_secret_area = False
+                # Reward for leaving the secret area
+                exploration_reward += 5.0
+            
+            # Penalty for staying too long in a secret area
+            if self.in_secret_area and (current_time - self.secret_area_start_time) > 10.0:  # 10 seconds
+                time_in_secret = current_time - self.secret_area_start_time
+                # Increasing penalty the longer we stay
+                exploration_reward -= min(2.0, 0.1 * (time_in_secret - 10))
+        
         if pos_key not in self.visited_positions:
             self.visited_positions.add(pos_key)
-            exploration_reward = config.REWARD_EXPLORATION * 2.0  # Double the exploration reward
+            exploration_reward += config.REWARD_EXPLORATION * 2.0  # Double the exploration reward
             
             # Bonus for moving away from the start position
             exploration_reward += min(1.0, distance_from_start / 100.0)
@@ -370,41 +396,63 @@ class AdvancedRewardSystem:
         Returns:
             float: Reward for progress towards objectives
         """
-        if not hasattr(self, 'episode_start_pos'):
-            self.episode_start_pos = current_pos
-            self.furthest_distance = 0
-            self.last_objective_check = time.time()
+        if len(game_vars) < 3:  # Need at least KILLCOUNT, ITEMCOUNT, SECRETCOUNT
             return 0.0
             
-        # Calculate distance from the start position
-        distance_from_start = math.sqrt(
-            (current_pos[0] - self.episode_start_pos[0])**2 + 
-            (current_pos[1] - self.episode_start_pos[1])**2
-        )
-        
-        # Reward for breaking the distance record
         reward = 0.0
-        if distance_from_start > self.furthest_distance + 10:  # 10 unit threshold
-            reward += (distance_from_start - self.furthest_distance) * 0.01
-            self.furthest_distance = distance_from_start
-            
-        # Periodic progress check
-        current_time = time.time()
-        if current_time - self.last_objective_check > 5.0:  # Every 5 seconds
-            self.last_objective_check = current_time
-            
-            # Penalty if agent is not making progress
-            if distance_from_start < 100:  # Still close to start
-                reward -= 0.5
-            elif distance_from_start < 200:  # Slow progress
-                reward -= 0.2
+        
+        # Initialize objectives if empty
+        if not self.objective_positions:
+            self.objective_positions = self._get_initial_objectives()
+        
+        # Update secret count
+        secret_diff = game_vars[2] - self.last_secretcount if len(game_vars) > 2 else 0
+        if secret_diff > 0:
+            self.last_secretcount = game_vars[2]
+            # Smaller reward for finding secrets to discourage farming
+            reward += secret_diff * (config.REWARD_SECRET * 0.5)
+            self.episode_stats['secrets_found'] += secret_diff
+        
+        # Kill objectives
+        for obj in [o for o in self.objective_positions if o['type'] == 'kill']:
+            kill_diff = game_vars[0] - self.last_killcount
+            if kill_diff > 0:
+                reward += kill_diff * config.REWARD_KILL
+                self.episode_stats['enemies_killed'] += kill_diff
+        
+        # Find objectives (like secrets) - Keeping for backward compatibility
+        for obj in [o for o in self.objective_positions if o['type'] == 'find']:
+            if obj['target'] == 'secrets' and secret_diff > 0:
+                # Reward already applied above, just mark as completed
+                pass
+        
+        # Collect objectives
+        for obj in [o for o in self.objective_positions if o['type'] == 'collect']:
+            if obj['target'] == 'items':
+                item_diff = game_vars[1] - self.last_itemcount
+                if item_diff > 0:
+                    reward += item_diff * config.REWARD_ITEM_PICKUP
+                    self.episode_stats['items_collected'] += item_diff
+        
+        # Reward for getting closer to position objectives
+        if len(current_pos) >= 2:  # Verify we have at least x and y
+            for obj in [o for o in self.objective_positions if 'position' in o]:
+                obj_pos = obj['position']
+                distance = math.sqrt(
+                    (current_pos[0] - obj_pos[0])**2 + 
+                    (current_pos[1] - obj_pos[1])**2
+                )
                 
-        # Bonus for reaching distant areas
-        if distance_from_start > 300:
-            reward += 0.1
-        elif distance_from_start > 500:
-            reward += 0.2
-            
+                # Reward for getting closer to the objective
+                if distance < self.last_objective_distance:
+                    reward += (self.last_objective_distance - distance) * 0.1
+                    self.last_objective_distance = distance
+                
+                # Big bonus for having reached the objective
+                if distance < 50:  # Distance threshold to consider objective reached
+                    reward += config.REWARD_OBJECTIVE_REACHED
+                    self.objective_positions.remove(obj)  # Remove the reached objective
+        
         return reward
 
     def calculate_tactical_reward(self, game_vars, action_taken):
@@ -666,7 +714,7 @@ class AdvancedRewardSystem:
         # Calculate different components of the reward
         rewards = {
             'base': base_reward,
-            'exploration': self.calculate_exploration_reward(current_pos),
+            'exploration': self.calculate_exploration_reward(current_pos, game_vars),
             'movement': self.calculate_movement_reward(current_pos),
             'sante': self.calculate_health_reward(current_health, current_armor),
             'combat': self.calculate_combat_reward(game_vars),
