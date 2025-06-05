@@ -1,0 +1,451 @@
+{
+  "current_level": 0,
+  "level_attempts": 74,
+  "level_successes": 8,
+  "performance_history": [
+    {
+      "reward": -598.314937271251,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -879.8393003130118,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": 3669.912983041988,
+      "success": true,
+      "completed": true,
+      "level": 0
+    },
+    {
+      "reward": -62.75591324582114,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": 4881.88125977706,
+      "success": true,
+      "completed": true,
+      "level": 0
+    },
+    {
+      "reward": -352.20858565822664,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -112.31699626184937,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": 602.310765391965,
+      "success": false,
+      "completed": true,
+      "level": 0
+    },
+    {
+      "reward": -89.81399993077353,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -210.21941385947792,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": 3028.6936056105546,
+      "success": true,
+      "completed": true,
+      "level": 0
+    },
+    {
+      "reward": 4474.151819329592,
+      "success": true,
+      "completed": true,
+      "level": 0
+    },
+    {
+      "reward": 3802.1702599554815,
+      "success": true,
+      "completed": true,
+      "level": 0
+    },
+    {
+      "reward": 4708.278950750607,
+      "success": true,
+      "completed": true,
+      "level": 0
+    },
+    {
+      "reward": 4683.041623651257,
+      "success": true,
+      "completed": true,
+      "level": 0
+    },
+    {
+      "reward": -877.9376178389102,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": 2043.7824876017794,
+      "success": true,
+      "completed": true,
+      "level": 0
+    },
+    {
+      "reward": -1221.7414368438256,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -1100.529177204487,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -776.3399634991315,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -992.0802869270043,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -624.5727800871713,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -1105.8382736009378,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -1036.8960333242258,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -925.7551374796088,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -902.1635751182565,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -527.8286809142431,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -1185.5287035280232,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -1760.8011406854464,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -356.36834715136047,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -567.3297964642435,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -298.7633413692714,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -987.5334001990424,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -887.7218901244062,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -357.00036522210104,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -364.084336850972,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -452.6582736646432,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -443.5242757819964,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -582.1895875953835,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -600.2014684424023,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -326.7503390078817,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -404.149198098485,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -862.8023130334891,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -446.5395146538984,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -421.8723538770142,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -382.7904850245296,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -500.65243733442384,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -929.668264058013,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -744.2851376258504,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -839.3033281814111,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -390.67245814407704,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -639.0103881849947,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -626.439169236028,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -498.99271223288775,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -536.144150281842,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -536.9557036055928,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -536.4493533492396,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -637.5580219064416,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -637.5580219064416,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -637.5580219064416,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -637.5580219064416,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -637.5580219064416,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -637.5580219064416,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -637.5580219064416,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -637.5580219064416,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -637.5580219064416,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -637.5580219064416,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -637.5580219064416,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -637.5580219064416,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -637.5580219064416,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -637.5580219064416,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -637.5580219064416,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -637.5580219064416,
+      "success": false,
+      "completed": false,
+      "level": 0
+    },
+    {
+      "reward": -637.5580219064416,
+      "success": false,
+      "completed": false,
+      "level": 0
+    }
+  ]
+}
