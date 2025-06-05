@@ -9,6 +9,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Logs
+logs/
+
 # Virtual Environment
 venv/
 env/
