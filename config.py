@@ -8,17 +8,15 @@ import torch
 ROOT_DIR = Path(__file__).parent
 MODEL_SAVE_PATH = ROOT_DIR / "models"
 LOG_PATH = ROOT_DIR / "logs"
-CURRICULUM_SAVE_PATH = ROOT_DIR / "curriculum"
 
 # Create directories
-for path in [MODEL_SAVE_PATH, LOG_PATH, CURRICULUM_SAVE_PATH]:
+for path in [MODEL_SAVE_PATH, LOG_PATH]:
     path.mkdir(parents=True, exist_ok=True)
 
 # Game Configuration
 VIZDOOM_MODE = vzd.Mode.PLAYER
 SCREEN_RESOLUTION = vzd.ScreenResolution.RES_320X200
 SCREEN_FORMAT = vzd.ScreenFormat.RGB24
-EPISODE_COUNT = 10000  # Total number of training episodes
 SOUND = False
 WINDOW_VISIBLE = True
 
@@ -90,35 +88,14 @@ GAME_VARIABLES = [
 ACTIONS_LIST = utils.getAllActions()
 
 # Reward Configuration
-REWARD_LIVING = 0.1           # Bonus for staying alive
-REWARD_KILL = 50.0            # Reward for killing an enemy
-REWARD_ITEM_PICKUP = 30.0     # Reward for picking up an item
-REWARD_WEAPON_PICKUP = 50.0   # Reward for picking up a weapon
-REWARD_ARMOR_PICKUP = 20.0    # Reward for picking up armor
-REWARD_HEALTH_PICKUP = 15.0   # Reward for picking up health
-REWARD_AMMO_PICKUP = 2.0      # Reward for picking up ammo
-REWARD_SECRET = 200.0         # Reward for finding a secret
-REWARD_EXPLORATION = 20.0     # Reward for exploring
-REWARD_DEATH = -100.0         # Penalty for dying
-REWARD_OBJECTIVE_REACHED = 500.0  # Reward for reaching objective
+REWARD_LIVING = -1.0
+REWARD_KILL = 50.0
+REWARD_ITEM_PICKUP = 30.0
+REWARD_SECRET = 200.0
+REWARD_MAP_EXIT = 1000.0
+REWARD_HIT = 20.0
+REWARD_DAMAGE_MADE = 20.0
 
-# Training Hyperparameters
-PPO_LEARNING_RATE = 0.00025
-PPO_GAMMA = 0.99
-PPO_GAE_LAMBDA = 0.95
-PPO_CLIP_EPSILON = 0.2
-PPO_EPOCHS = 10
-PPO_BATCH_SIZE = 64
-
-# Device configuration
-DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-
-def validate_config():
-    """Validate the configuration"""
-    # Ensure required directories exist
-    for path in [MODEL_SAVE_PATH, LOG_PATH, CURRICULUM_SAVE_PATH]:
-        if not path.exists():
-            path.mkdir(parents=True, exist_ok=True)
-
-# Auto-validate on import
-validate_config()
+REWARD_HIT_TAKEN = -20.0
+REWARD_DEATH = -100.0
+REWARD_DAMAGE_TAKEN = -20.0
