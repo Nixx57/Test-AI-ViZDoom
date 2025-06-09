@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
+import inspect
 import itertools as it
+import math
 import os
 import random
-from collections import deque
+from collections import deque, namedtuple
 from time import sleep, time
 
 import numpy as np
@@ -13,6 +15,7 @@ import torch.nn as nn
 import torch.optim as optim
 import config
 from tqdm import trange
+import torch.nn.functional as F
 
 import vizdoom as vzd
 
@@ -22,7 +25,7 @@ learning_rate = 0.00025
 discount_factor = 0.99
 train_epochs = 5
 learning_steps_per_epoch = 2000
-replay_memory_size = 10000
+replay_memory_size = 100000
 
 # NN learning settings
 batch_size = 64
@@ -37,13 +40,14 @@ episodes_to_watch = 10
 
 model_savefile = "./model-doom.pth"
 save_model = True
-load_model = False
+load_model = True
 skip_learning = False
 
+Experience = namedtuple('Experience', 
+                       ['state', 'action', 'reward', 'next_state', 'done'])
+
 # Configuration file path
-config_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scenarios", "map01.cfg")
-# config_file_path = os.path.join(vzd.scenarios_path, "rocket_basic.cfg")
-# config_file_path = os.path.join(vzd.scenarios_path, "basic.cfg")
+config_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scenarios", "map02.cfg")
 
 # Uses GPU if available
 if torch.cuda.is_available():
@@ -54,10 +58,9 @@ else:
 
 
 def preprocess(img):
-    """Down samples image to resolution"""
+    """Down samples image to resolution and normalizes"""
     img = skimage.transform.resize(img, resolution)
-    img = img.astype(np.float32)
-    img = np.expand_dims(img, axis=0)
+    img = img.astype(np.float32) / 255.0  # Normalize to [0,1]
     return img
 
 
@@ -68,7 +71,6 @@ def create_simple_game():
     game.set_doom_skill(4)
     game.set_window_visible(False)
     game.set_mode(vzd.Mode.PLAYER)
-    # game.set_screen_format(config.SCREEN_FORMAT)
     game.set_screen_format(vzd.ScreenFormat.GRAY8)
     game.set_screen_resolution(config.SCREEN_RESOLUTION)
     game.set_available_buttons(config.AVAILABLE_BUTTONS)
@@ -97,8 +99,6 @@ def create_simple_game():
     game.set_secret_reward(config.REWARD_SECRET)
     game.set_item_reward(config.REWARD_ITEM_PICKUP)
     game.set_damage_made_reward(config.REWARD_DAMAGE_MADE)
-
-    # PENALTY
     game.set_hit_reward(config.REWARD_HIT)
     game.set_hit_taken_reward(config.REWARD_HIT_TAKEN)
     game.set_damage_taken_reward(config.REWARD_DAMAGE_TAKEN)
@@ -114,11 +114,25 @@ def test(game, agent):
     test_scores = []
     for test_episode in trange(test_episodes_per_epoch, leave=False):
         game.new_episode()
+        agent.reset_hidden()
+        
+        # Initialize frame stack for test (same as in training)
+        frame_stack = deque(maxlen=4)
+        initial_state = preprocess(game.get_state().screen_buffer)
+        for _ in range(4):
+            frame_stack.append(initial_state)
+        
         while not game.is_episode_finished():
-            state = preprocess(game.get_state().screen_buffer)
+            # Use frame stack like in training
+            state = np.stack(frame_stack, axis=0)
             best_action_index = agent.get_action(state)
-
             game.make_action(actions[best_action_index], frame_repeat)
+            
+            # Update frame stack if episode continues
+            if not game.is_episode_finished():
+                new_frame = preprocess(game.get_state().screen_buffer)
+                frame_stack.append(new_frame)
+                
         r = game.get_total_reward()
         test_scores.append(r)
 
@@ -133,44 +147,55 @@ def test(game, agent):
 
 
 def run(game, agent, actions, num_epochs, frame_repeat, steps_per_epoch=2000):
-    """
-    Run num epochs of training episodes.
-    Skip frame_repeat number of frames after each action.
-    """
-
+    """Run training epochs with frame stacking"""
     start_time = time()
-
+    
     for epoch in range(num_epochs):
         game.new_episode()
+        agent.reset_hidden()
         train_scores = []
         global_step = 0
         print(f"\nEpoch #{epoch + 1}")
+        
+        # Initialize frame stack
+        frame_stack = deque(maxlen=4)
+        initial_state = preprocess(game.get_state().screen_buffer)
+        for _ in range(4):
+            frame_stack.append(initial_state)
 
         for _ in trange(steps_per_epoch, leave=False):
-            state = preprocess(game.get_state().screen_buffer)
+            # Stack frames for temporal information
+            state = np.stack(frame_stack, axis=0)
             action = agent.get_action(state)
             reward = game.make_action(actions[action], frame_repeat)
             done = game.is_episode_finished()
 
             if not done:
-                next_state = preprocess(game.get_state().screen_buffer)
+                next_frame = preprocess(game.get_state().screen_buffer)
+                frame_stack.append(next_frame)
+                next_state = np.stack(frame_stack, axis=0)
             else:
-                next_state = np.zeros((1, 30, 45)).astype(np.float32)
+                next_state = np.zeros((4, 30, 45)).astype(np.float32)
 
-            agent.append_memory(state, action, reward, next_state, done)
+            agent.store_experience(state, action, reward, next_state, done)
 
-            if global_step > agent.batch_size:
+            if global_step > agent.batch_size and global_step % 4 == 0:
                 agent.train()
 
             if done:
                 train_scores.append(game.get_total_reward())
                 game.new_episode()
+                agent.reset_hidden()
+                # Reset frame stack
+                if not game.is_episode_finished():
+                    initial_state = preprocess(game.get_state().screen_buffer)
+                    frame_stack.clear()
+                    for _ in range(4):
+                        frame_stack.append(initial_state)
 
             global_step += 1
 
-        agent.update_target_net()
         train_scores = np.array(train_scores)
-
         print(
             "Results: mean: {:.1f} +/- {:.1f},".format(
                 train_scores.mean(), train_scores.std()
@@ -182,159 +207,295 @@ def run(game, agent, actions, num_epochs, frame_repeat, steps_per_epoch=2000):
         test(game, agent)
         if save_model:
             print("Saving the network weights to:", model_savefile)
-            torch.save(agent.q_net, model_savefile)
+            agent.save_model(model_savefile)
         print("Total elapsed time: %.2f minutes" % ((time() - start_time) / 60.0))
 
     game.close()
     return agent, game
 
 
-class DuelQNet(nn.Module):
-    """
-    This is Duel DQN architecture.
-    see https://arxiv.org/abs/1511.06581 for more information.
-    """
-
-    def __init__(self, available_actions_count):
-        super().__init__()
-        self.conv1 = nn.Sequential(
-            nn.Conv2d(1, 8, kernel_size=3, stride=2, bias=False),
-            nn.BatchNorm2d(8),
-            nn.ReLU(),
-        )
-
-        self.conv2 = nn.Sequential(
-            nn.Conv2d(8, 8, kernel_size=3, stride=2, bias=False),
-            nn.BatchNorm2d(8),
-            nn.ReLU(),
-        )
-
-        self.conv3 = nn.Sequential(
-            nn.Conv2d(8, 8, kernel_size=3, stride=1, bias=False),
-            nn.BatchNorm2d(8),
-            nn.ReLU(),
-        )
-
-        self.conv4 = nn.Sequential(
-            nn.Conv2d(8, 16, kernel_size=3, stride=1, bias=False),
-            nn.BatchNorm2d(16),
-            nn.ReLU(),
-        )
-
-        self.state_fc = nn.Sequential(nn.Linear(96, 64), nn.ReLU(), nn.Linear(64, 1))
-
-        self.advantage_fc = nn.Sequential(
-            nn.Linear(96, 64), nn.ReLU(), nn.Linear(64, available_actions_count)
-        )
-
+class NoisyLinear(nn.Module):
+    """Noisy linear layer for exploration"""
+    def __init__(self, in_features, out_features, sigma_init=0.5):
+        super(NoisyLinear, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.sigma_init = sigma_init
+        
+        self.weight_mu = nn.Parameter(torch.FloatTensor(out_features, in_features))
+        self.weight_sigma = nn.Parameter(torch.FloatTensor(out_features, in_features))
+        self.register_buffer('weight_epsilon', torch.FloatTensor(out_features, in_features))
+        
+        self.bias_mu = nn.Parameter(torch.FloatTensor(out_features))
+        self.bias_sigma = nn.Parameter(torch.FloatTensor(out_features))
+        self.register_buffer('bias_epsilon', torch.FloatTensor(out_features))
+        
+        self.reset_parameters()
+        self.reset_noise()
+    
+    def reset_parameters(self):
+        mu_range = 1 / math.sqrt(self.in_features)
+        self.weight_mu.data.uniform_(-mu_range, mu_range)
+        self.weight_sigma.data.fill_(self.sigma_init / math.sqrt(self.in_features))
+        self.bias_mu.data.uniform_(-mu_range, mu_range)
+        self.bias_sigma.data.fill_(self.sigma_init / math.sqrt(self.out_features))
+    
+    def reset_noise(self):
+        epsilon_in = self._scale_noise(self.in_features)
+        epsilon_out = self._scale_noise(self.out_features)
+        self.weight_epsilon.copy_(epsilon_out.ger(epsilon_in))
+        self.bias_epsilon.copy_(epsilon_out)
+    
+    def _scale_noise(self, size):
+        x = torch.randn(size, device=self.weight_mu.device)
+        return x.sign().mul(x.abs().sqrt())
+    
     def forward(self, x):
-        x = self.conv1(x)
-        x = self.conv2(x)
-        x = self.conv3(x)
-        x = self.conv4(x)
-        x = x.view(-1, 192)
-        x1 = x[:, :96]  # input for the net to calculate the state value
-        x2 = x[:, 96:]  # relative advantage of actions in the state
-        state_value = self.state_fc(x1).reshape(-1, 1)
-        advantage_values = self.advantage_fc(x2)
-        x = state_value + (
-            advantage_values - advantage_values.mean(dim=1).reshape(-1, 1)
+        if self.training:
+            weight = self.weight_mu + self.weight_sigma.mul(self.weight_epsilon)
+            bias = self.bias_mu + self.bias_sigma.mul(self.bias_epsilon)
+        else:
+            weight = self.weight_mu
+            bias = self.bias_mu
+        return F.linear(x, weight, bias)
+
+
+class ImprovedDQN(nn.Module):
+    """Simplified but robust DQN architecture"""
+    def __init__(self, action_size):
+        super(ImprovedDQN, self).__init__()
+        self.action_size = action_size
+        
+        # Convolutional layers
+        self.conv1 = nn.Conv2d(4, 32, kernel_size=8, stride=4, padding=2)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=1)
+        self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
+        
+        # Calculate conv output size
+        self.conv_output_size = self._get_conv_output_size()
+        
+        # Dueling architecture
+        self.value_stream = nn.Sequential(
+            nn.Linear(self.conv_output_size, 512),
+            nn.ReLU(),
+            nn.Linear(512, 1)
         )
+        
+        self.advantage_stream = nn.Sequential(
+            nn.Linear(self.conv_output_size, 512),
+            nn.ReLU(),
+            nn.Linear(512, action_size)
+        )
+        
+    def _get_conv_output_size(self):
+        # Test input to calculate output size
+        x = torch.zeros(1, 4, 30, 45)
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        x = F.relu(self.conv3(x))
+        return x.view(1, -1).size(1)
+        
+    def forward(self, x):
+        batch_size = x.size(0)
+        
+        # CNN feature extraction
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        x = F.relu(self.conv3(x))
+        
+        # Flatten
+        x = x.view(batch_size, -1)
+        
+        # Dueling streams
+        value = self.value_stream(x)
+        advantage = self.advantage_stream(x)
+        
+        # Combine value and advantage
+        q_values = value + advantage - advantage.mean(dim=1, keepdim=True)
+        
+        return q_values
 
-        return x
+
+class PrioritizedReplayBuffer:
+    """Prioritized Experience Replay Buffer"""
+    def __init__(self, capacity, alpha=0.6):
+        self.capacity = capacity
+        self.alpha = alpha
+        self.buffer = []
+        self.priorities = np.zeros(capacity, dtype=np.float32)
+        self.position = 0
+        
+    def push(self, experience):
+        max_priority = self.priorities.max() if self.buffer else 1.0
+        
+        if len(self.buffer) < self.capacity:
+            self.buffer.append(experience)
+        else:
+            self.buffer[self.position] = experience
+            
+        self.priorities[self.position] = max_priority
+        self.position = (self.position + 1) % self.capacity
+        
+    def sample(self, batch_size, beta=0.4):
+        if len(self.buffer) == self.capacity:
+            priorities = self.priorities
+        else:
+            priorities = self.priorities[:self.position]
+            
+        probabilities = priorities ** self.alpha
+        probabilities /= probabilities.sum()
+        
+        indices = np.random.choice(len(self.buffer), batch_size, p=probabilities)
+        experiences = [self.buffer[idx] for idx in indices]
+        
+        # Importance sampling weights
+        total = len(self.buffer)
+        weights = (total * probabilities[indices]) ** (-beta)
+        weights /= weights.max()
+        weights = torch.tensor(weights, dtype=torch.float32, device=DEVICE)
+        
+        return experiences, indices, weights
+    
+    def update_priorities(self, indices, priorities):
+        for idx, priority in zip(indices, priorities):
+            self.priorities[idx] = priority + 1e-6
+            
+    def __len__(self):
+        return len(self.buffer)
 
 
-class DQNAgent:
+class ImprovedDQNAgent:
+    """Improved DQN Agent with essential features"""
     def __init__(
         self,
         action_size,
-        memory_size,
-        batch_size,
-        discount_factor,
-        lr,
-        load_model,
-        epsilon=1,
-        epsilon_decay=0.9996,
-        epsilon_min=0.1,
+        memory_size=100000,
+        batch_size=32,
+        discount_factor=0.99,
+        lr=0.00025,
+        epsilon_start=1.0,
+        epsilon_end=0.01,
+        epsilon_decay=0.995,
+        target_update_frequency=1000,
+        load_model=False,
+        model_path=None
     ):
         self.action_size = action_size
-        self.epsilon = epsilon
-        self.epsilon_decay = epsilon_decay
-        self.epsilon_min = epsilon_min
         self.batch_size = batch_size
         self.discount = discount_factor
-        self.lr = lr
-        self.memory = deque(maxlen=memory_size)
-        self.criterion = nn.MSELoss()
-
-        if load_model:
-            print("Loading model from: ", model_savefile)
-            self.q_net = torch.load(model_savefile)
-            self.target_net = torch.load(model_savefile)
-            self.epsilon = self.epsilon_min
-
-        else:
-            print("Initializing new model")
-            self.q_net = DuelQNet(action_size).to(DEVICE)
-            self.target_net = DuelQNet(action_size).to(DEVICE)
-
-        self.opt = optim.SGD(self.q_net.parameters(), lr=self.lr)
-
-    def get_action(self, state):
-        if np.random.uniform() < self.epsilon:
-            return random.choice(range(self.action_size))
-        else:
-            state = np.expand_dims(state, axis=0)
-            state = torch.from_numpy(state).float().to(DEVICE)
-            action = torch.argmax(self.q_net(state)).item()
-            return action
-
-    def update_target_net(self):
+        self.epsilon = epsilon_start
+        self.epsilon_end = epsilon_end
+        self.epsilon_decay = epsilon_decay
+        self.target_update_frequency = target_update_frequency
+        
+        # Networks
+        self.q_net = ImprovedDQN(action_size).to(DEVICE)
+        self.target_net = ImprovedDQN(action_size).to(DEVICE)
         self.target_net.load_state_dict(self.q_net.state_dict())
-
-    def append_memory(self, state, action, reward, next_state, done):
-        self.memory.append((state, action, reward, next_state, done))
-
-    def train(self):
-        batch = random.sample(self.memory, self.batch_size)
-        batch = np.array(batch, dtype=object)
-
-        states = np.stack(batch[:, 0]).astype(float)
-        actions = batch[:, 1].astype(int)
-        rewards = batch[:, 2].astype(float)
-        next_states = np.stack(batch[:, 3]).astype(float)
-        dones = batch[:, 4].astype(bool)
-        not_dones = ~dones
-
-        row_idx = np.arange(self.batch_size)  # used for indexing the batch
-
-        # value of the next states with double q learning
-        # see https://arxiv.org/abs/1509.06461 for more information on double q learning
-        with torch.no_grad():
-            next_states = torch.from_numpy(next_states).float().to(DEVICE)
-            idx = row_idx, np.argmax(self.q_net(next_states).cpu().data.numpy(), 1)
-            next_state_values = self.target_net(next_states).cpu().data.numpy()[idx]
-            next_state_values = next_state_values[not_dones]
-
-        # this defines y = r + discount * max_a q(s', a)
-        q_targets = rewards.copy()
-        q_targets[not_dones] += self.discount * next_state_values
-        q_targets = torch.from_numpy(q_targets).float().to(DEVICE)
-
-        # this selects only the q values of the actions taken
-        idx = row_idx, actions
-        states = torch.from_numpy(states).float().to(DEVICE)
-        action_values = self.q_net(states)[idx].float().to(DEVICE)
-
-        self.opt.zero_grad()
-        td_error = self.criterion(q_targets, action_values)
-        td_error.backward()
-        self.opt.step()
-
-        if self.epsilon > self.epsilon_min:
-            self.epsilon *= self.epsilon_decay
+        
+        # Optimizer
+        self.optimizer = optim.Adam(self.q_net.parameters(), lr=lr)
+        
+        # Memory
+        self.memory = PrioritizedReplayBuffer(memory_size)
+        
+        # Training variables
+        self.steps = 0
+        
+        if load_model and model_path:
+            self.load_model(model_path)
+            
+    def get_action(self, state, evaluate=False):
+        """Select action using epsilon-greedy or greedy policy"""
+        if evaluate or random.random() > self.epsilon:
+            with torch.no_grad():
+                state_tensor = torch.FloatTensor(state).unsqueeze(0).to(DEVICE)
+                q_values = self.q_net(state_tensor)
+                return q_values.argmax().item()
         else:
-            self.epsilon = self.epsilon_min
+            return random.randrange(self.action_size)
+    
+    def reset_hidden(self):
+        """Compatibility method for LSTM-based models"""
+        pass
+        
+    def store_experience(self, state, action, reward, next_state, done):
+        """Store experience in replay buffer"""
+        experience = Experience(state, action, reward, next_state, done)
+        self.memory.push(experience)
+        
+    def train(self):
+        """Train the agent"""
+        if len(self.memory) < self.batch_size:
+            return
+            
+        # Sample from memory
+        experiences, indices, weights = self.memory.sample(self.batch_size)
+        
+        # Prepare batch - convert to numpy arrays first for efficiency
+        states_list = [e.state for e in experiences]
+        actions_list = [e.action for e in experiences]
+        rewards_list = [e.reward for e in experiences]
+        next_states_list = [e.next_state for e in experiences]
+        dones_list = [e.done for e in experiences]
+        
+        # Convert to tensors efficiently
+        states = torch.FloatTensor(np.array(states_list)).to(DEVICE)
+        actions = torch.LongTensor(actions_list).to(DEVICE)
+        rewards = torch.FloatTensor(rewards_list).to(DEVICE)
+        next_states = torch.FloatTensor(np.array(next_states_list)).to(DEVICE)
+        dones = torch.BoolTensor(dones_list).to(DEVICE)
+        
+        # Current Q-values
+        current_q_values = self.q_net(states).gather(1, actions.unsqueeze(1))
+        
+        # Next Q-values (Double DQN)
+        with torch.no_grad():
+            next_actions = self.q_net(next_states).argmax(1)
+            next_q_values = self.target_net(next_states).gather(1, next_actions.unsqueeze(1))
+            target_q_values = rewards.unsqueeze(1) + (self.discount * next_q_values * ~dones.unsqueeze(1))
+        
+        # Compute loss
+        td_errors = target_q_values - current_q_values
+        loss = (td_errors.pow(2) * weights.unsqueeze(1)).mean()
+        
+        # Update priorities
+        priorities = td_errors.abs().detach().cpu().numpy().flatten()
+        self.memory.update_priorities(indices, priorities)
+        
+        # Optimize
+        self.optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.q_net.parameters(), 10)
+        self.optimizer.step()
+        
+        # Update target network
+        self.steps += 1
+        if self.steps % self.target_update_frequency == 0:
+            self.target_net.load_state_dict(self.q_net.state_dict())
+            
+        # Decay epsilon
+        if self.epsilon > self.epsilon_end:
+            self.epsilon *= self.epsilon_decay
+            
+    def save_model(self, path):
+        """Save model checkpoint"""
+        torch.save({
+            'q_net_state_dict': self.q_net.state_dict(),
+            'target_net_state_dict': self.target_net.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'epsilon': self.epsilon,
+            'steps': self.steps
+        }, path)
+        
+    def load_model(self, path):
+        """Load model checkpoint"""
+        checkpoint = torch.load(path, map_location=DEVICE)
+        self.q_net.load_state_dict(checkpoint['q_net_state_dict'])
+        self.target_net.load_state_dict(checkpoint['target_net_state_dict'])
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.epsilon = checkpoint.get('epsilon', self.epsilon_end)
+        self.steps = checkpoint.get('steps', 0)
 
 
 if __name__ == "__main__":
@@ -343,17 +504,23 @@ if __name__ == "__main__":
     n = game.get_available_buttons_size()
     actions = [list(a) for a in it.product([0, 1], repeat=n)]
 
-    # Initialize our agent with the set parameters
-    agent = DQNAgent(
-        len(actions),
-        lr=learning_rate,
-        batch_size=batch_size,
+    # Initialize agent
+    agent = ImprovedDQNAgent(
+        action_size=len(actions),
         memory_size=replay_memory_size,
+        batch_size=batch_size,
         discount_factor=discount_factor,
-        load_model=load_model,
+        lr=learning_rate,
+        load_model=load_model
     )
 
-    # Run the training for the set number of epochs
+    # Add method for compatibility
+    def append_memory(state, action, reward, next_state, done):
+        agent.store_experience(state, action, reward, next_state, done)
+    
+    agent.append_memory = append_memory
+
+    # Run training
     if not skip_learning:
         agent, game = run(
             game,
@@ -367,24 +534,39 @@ if __name__ == "__main__":
         print("======================================")
         print("Training finished. It's time to watch!")
 
-    # Reinitialize the game with window visible
+    # Reinitialize game for visualization
     game.close()
     game.set_window_visible(True)
     game.set_mode(vzd.Mode.ASYNC_PLAYER)
     game.init()
 
+    # Initialize frame stack for visualization
+    frame_stack = deque(maxlen=4)
+
     for _ in range(episodes_to_watch):
         game.new_episode()
+        agent.reset_hidden()
+        
+        # Initialize frame stack
+        initial_state = preprocess(game.get_state().screen_buffer)
+        frame_stack.clear()
+        for _ in range(4):
+            frame_stack.append(initial_state)
+            
         while not game.is_episode_finished():
-            state = preprocess(game.get_state().screen_buffer)
-            best_action_index = agent.get_action(state)
+            state = np.stack(frame_stack, axis=0)
+            best_action_index = agent.get_action(state, evaluate=True)
 
-            # Instead of make_action(a, frame_repeat) in order to make the animation smooth
+            # Smooth animation
             game.set_action(actions[best_action_index])
             for _ in range(frame_repeat):
                 game.advance_action()
+                
+            # Update frame stack
+            if not game.is_episode_finished():
+                new_frame = preprocess(game.get_state().screen_buffer)
+                frame_stack.append(new_frame)
 
-        # Sleep between episodes
         sleep(1.0)
         score = game.get_total_reward()
         print("Total score: ", score)
