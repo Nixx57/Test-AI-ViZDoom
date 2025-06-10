@@ -23,8 +23,7 @@ import vizdoom as vzd
 # Q-learning settings
 learning_rate = 0.00025
 discount_factor = 0.99
-train_epochs = 5
-learning_steps_per_epoch = 2000
+train_epochs = 10
 replay_memory_size = 100000
 
 # NN learning settings
@@ -40,14 +39,14 @@ episodes_to_watch = 10
 
 model_savefile = "./model-doom.pth"
 save_model = True
-load_model = True
+load_model = False
 skip_learning = False
 
 Experience = namedtuple('Experience', 
                        ['state', 'action', 'reward', 'next_state', 'done'])
 
 # Configuration file path
-config_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scenarios", "map02.cfg")
+config_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scenarios", "map01.cfg")
 
 # Uses GPU if available
 if torch.cuda.is_available():
@@ -126,7 +125,7 @@ def test(game, agent):
             # Use frame stack like in training
             state = np.stack(frame_stack, axis=0)
             best_action_index = agent.get_action(state)
-            game.make_action(actions[best_action_index], frame_repeat)
+            game.make_action(config.ACTIONS_LIST[best_action_index], frame_repeat)
             
             # Update frame stack if episode continues
             if not game.is_episode_finished():
@@ -196,13 +195,17 @@ def run(game, agent, actions, num_epochs, frame_repeat, steps_per_epoch=2000):
             global_step += 1
 
         train_scores = np.array(train_scores)
-        print(
+        try:
+            print(
             "Results: mean: {:.1f} +/- {:.1f},".format(
                 train_scores.mean(), train_scores.std()
             ),
             "min: %.1f," % train_scores.min(),
             "max: %.1f," % train_scores.max(),
-        )
+            )
+        except:
+            print("No training scores collected this epoch")
+            # mean_score, std_score = 0, 0
 
         test(game, agent)
         if save_model:
@@ -501,12 +504,12 @@ class ImprovedDQNAgent:
 if __name__ == "__main__":
     # Initialize game and actions
     game = create_simple_game()
-    n = game.get_available_buttons_size()
-    actions = [list(a) for a in it.product([0, 1], repeat=n)]
+    # n = game.get_available_buttons_size()
+    # actions = [list(a) for a in it.product([0, 1], repeat=n)]
 
     # Initialize agent
     agent = ImprovedDQNAgent(
-        action_size=len(actions),
+        action_size=len(config.ACTIONS_LIST),
         memory_size=replay_memory_size,
         batch_size=batch_size,
         discount_factor=discount_factor,
@@ -525,10 +528,10 @@ if __name__ == "__main__":
         agent, game = run(
             game,
             agent,
-            actions,
+            config.ACTIONS_LIST,
             num_epochs=train_epochs,
             frame_repeat=frame_repeat,
-            steps_per_epoch=learning_steps_per_epoch,
+            steps_per_epoch=game.get_episode_timeout(),
         )
 
         print("======================================")
@@ -558,7 +561,7 @@ if __name__ == "__main__":
             best_action_index = agent.get_action(state, evaluate=True)
 
             # Smooth animation
-            game.set_action(actions[best_action_index])
+            game.set_action(config.ACTIONS_LIST[best_action_index])
             for _ in range(frame_repeat):
                 game.advance_action()
                 
