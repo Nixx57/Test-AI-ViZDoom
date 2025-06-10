@@ -39,7 +39,7 @@ episodes_to_watch = 10
 
 model_savefile = "./model-doom.pth"
 save_model = True
-load_model = False
+load_model = True
 skip_learning = False
 
 Experience = namedtuple('Experience', 
@@ -207,7 +207,7 @@ def run(game, agent, actions, num_epochs, frame_repeat, steps_per_epoch=2000):
             print("No training scores collected this epoch")
             # mean_score, std_score = 0, 0
 
-        test(game, agent)
+        # test(game, agent)
         if save_model:
             print("Saving the network weights to:", model_savefile)
             agent.save_model(model_savefile)
@@ -531,7 +531,7 @@ if __name__ == "__main__":
             config.ACTIONS_LIST,
             num_epochs=train_epochs,
             frame_repeat=frame_repeat,
-            steps_per_epoch=game.get_episode_timeout(),
+            steps_per_epoch=2100, # game.get_episode_timeout() doesn't work => return 0
         )
 
         print("======================================")
@@ -540,7 +540,7 @@ if __name__ == "__main__":
     # Reinitialize game for visualization
     game.close()
     game.set_window_visible(True)
-    game.set_mode(vzd.Mode.ASYNC_PLAYER)
+    game.set_mode(vzd.Mode.PLAYER)
     game.init()
 
     # Initialize frame stack for visualization
